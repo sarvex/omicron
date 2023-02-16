@@ -108,10 +108,9 @@ pfexec mkdir /opt/oxide/work
 pfexec chown build:build /opt/oxide/work
 cd /opt/oxide/work
 
-ptime -m tar xvzf /input/package/work/package.tar.gz
-mkdir out/
+mkdir out tests
+ptime -m tar xvzf /input/package/work/deploy-tools.tar.gz
 cp /input/package/work/out/* out/
-mkdir tests
 for p in /input/build-end-to-end-tests/work/*.gz; do
 	ptime -m gunzip < "$p" > "tests/$(basename "${p%.gz}")"
 	chmod a+x "tests/$(basename "${p%.gz}")"

@@ -5,7 +5,7 @@
 #: target = "helios-latest"
 #: rust_toolchain = "nightly-2022-09-27"
 #: output_rules = [
-#:	"=/work/package.tar.gz",
+#:	"=/work/deploy-tools.tar.gz",
 #:	"=/work/out/*",
 #: ]
 #:
@@ -28,6 +28,6 @@ files=(
 	target/release/omicron-package
 	tools/create_virtual_hardware.sh
 )
-ptime -m tar cvzf /work/package.tar.gz "${files[@]}"
+ptime -m tar cvzf /work/deploy-tools.tar.gz "${files[@]}"
 mkdir -p /work/out
 mv out/*.tar out/*.tar.gz /work/out/
