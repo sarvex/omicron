@@ -29,7 +29,7 @@ popd
 cargo build --locked --release --bin tufaceous
 alias tufaceous=target/release/tufaceous
 
-python3 -c 'import secrets; open("/work/key.txt", "w").write("ed25519:" + secrets.token_hex(32))'
+python3 -c 'import secrets; open("/work/key.txt", "w").write("ed25519:%s\n" % secrets.token_hex(32))'
 read -r TUFACEOUS_KEY </work/key.txt
 export TUFACEOUS_KEY
 
