@@ -27,12 +27,11 @@ tar cvf "/work/control-plane.tar" ./*
 popd
 
 cargo build --locked --release --bin tufaceous
-alias tufaceous=target/release/tufaceous
 
 python3 -c 'import secrets; open("/work/key.txt", "w").write("ed25519:%s\n" % secrets.token_hex(32))'
 read -r TUFACEOUS_KEY </work/key.txt
 export TUFACEOUS_KEY
 
-tufaceous -r /work/repo init --no-generate-key
-tufaceous -r /work/repo add --name control_plane control_plane "/work/control-plane.tar" "$VERSION"
-tufaceous -r /work/repo archive /work/repo.zip
+target/release/tufaceous -r /work/repo init --no-generate-key
+target/release/tufaceous -r /work/repo add --name control_plane control_plane "/work/control-plane.tar" "$VERSION"
+target/release/tufaceous -r /work/repo archive /work/repo.zip
