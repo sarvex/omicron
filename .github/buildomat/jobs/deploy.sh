@@ -109,6 +109,7 @@ pfexec chown build:build /opt/oxide/work
 cd /opt/oxide/work
 
 ptime -m tar xvzf /input/package/work/package.tar.gz
+mkdir out/
 cp /input/package/work/out/* out/
 mkdir tests
 for p in /input/build-end-to-end-tests/work/*.gz; do

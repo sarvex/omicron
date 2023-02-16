@@ -23,7 +23,7 @@ COMMIT=$(git rev-parse HEAD)
 VERSION="0.0.0+git${COMMIT:0:11}"
 
 pushd /input/package/work/out
-tar cvf "/work/control-plane.tar" -- *
+tar cvf "/work/control-plane.tar" ./*
 popd
 
 cargo build --locked --release --bin tufaceous
