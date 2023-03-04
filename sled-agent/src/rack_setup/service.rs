@@ -171,11 +171,17 @@ impl RackSetupService {
         // have a management network, so we hard-code the list of members and
         // accept it as a parameter instead.
         member_device_id_certs: Vec<Ed25519Certificate>,
+        sidecar_external_radix: u8,
     ) -> Self {
         let handle = tokio::task::spawn(async move {
             let svc = ServiceInner::new(log.clone());
             if let Err(e) = svc
-                .run(&config, local_bootstrap_agent, &member_device_id_certs)
+                .run(
+                    &config,
+                    local_bootstrap_agent,
+                    &member_device_id_certs,
+                    sidecar_external_radix,
+                )
                 .await
             {
                 warn!(log, "RSS injection failed: {}", e);
@@ -587,6 +593,7 @@ impl ServiceInner {
         config: &Config,
         sled_plan: &SledPlan,
         service_plan: &ServicePlan,
+        sidecar_external_radix: u8,
     ) -> Result<(), SetupServiceError> {
         info!(self.log, "Handing off control to Nexus");
 
@@ -783,6 +790,7 @@ impl ServiceInner {
             // the need for unencrypted communication.
             certs: vec![],
             internal_dns_zone_config: d2n_params(&service_plan.dns_config),
+            sidecar_external_radix,
         };
 
         let notify_nexus = || async {
@@ -858,6 +866,7 @@ impl ServiceInner {
         config: &Config,
         local_bootstrap_agent: BootstrapAgentHandle,
         member_device_id_certs: &[Ed25519Certificate],
+        sidecar_external_radix: u8,
     ) -> Result<(), SetupServiceError> {
         info!(self.log, "Injecting RSS configuration: {:#?}", config);
 
@@ -885,7 +894,13 @@ impl ServiceInner {
             let service_plan = ServicePlan::load(&self.log)
                 .await?
                 .expect("Service plan should exist if completed marker exists");
-            self.handoff_to_nexus(&config, &sled_plan, &service_plan).await?;
+            self.handoff_to_nexus(
+                &config,
+                &sled_plan,
+                &service_plan,
+                sidecar_external_radix,
+            )
+            .await?;
             return Ok(());
         } else {
             info!(self.log, "RSS configuration has not been fully applied yet",);
@@ -1079,7 +1094,13 @@ impl ServiceInner {
 
         // At this point, even if we reboot, we must not try to manage sleds,
         // services, or DNS records.
-        self.handoff_to_nexus(&config, &plan, &service_plan).await?;
+        self.handoff_to_nexus(
+            &config,
+            &plan,
+            &service_plan,
+            sidecar_external_radix,
+        )
+        .await?;
 
         // TODO Questions to consider:
         // - What if a sled comes online *right after* this setup? How does

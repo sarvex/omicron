@@ -27,6 +27,7 @@ use uuid::Uuid;
 // The implementation of Nexus is large, and split into a number of submodules
 // by resource.
 pub mod background;
+mod address_lot;
 mod certificate;
 mod device_auth;
 mod disk;
@@ -45,6 +46,8 @@ mod session;
 mod silo;
 mod sled;
 mod snapshot;
+mod switch_interface;
+mod switch_port;
 pub mod test_interfaces;
 mod update;
 mod volume;

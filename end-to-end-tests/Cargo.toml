@@ -17,3 +17,4 @@ russh = "0.37.1"
 russh-keys = "0.37.1"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 trust-dns-resolver.workspace = true
+uuid.workspace = true
