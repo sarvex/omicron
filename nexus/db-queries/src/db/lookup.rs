@@ -388,6 +388,14 @@ impl<'a> LookupPath<'a> {
         }
     }
 
+    pub fn address_lot_id(self, id: Uuid) -> AddressLot<'a> {
+        AddressLot::PrimaryKey(Root { lookup_root: self }, id)
+    }
+
+    pub fn address_lot_name_owned(self, name: Name) -> AddressLot<'a> {
+        AddressLot::OwnedName(Root { lookup_root: self }, name)
+    }
+
     /// Select a resource of type UpdateArtifact, identified by its
     /// `(name, version, kind)` tuple
     pub fn update_artifact_tuple(
@@ -799,6 +807,15 @@ lookup_resource! {
     name = "Certificate",
     ancestors = [],
     children = [],
+    lookup_by_name = true,
+    soft_deletes = true,
+    primary_key_columns = [ { column_name = "id", rust_type = Uuid } ]
+}
+
+lookup_resource! {
+    name = "AddressLot",
+    ancestors = [],
+    children = [], // TODO: Should this include AddressLotBlock?
     lookup_by_name = true,
     soft_deletes = true,
     primary_key_columns = [ { column_name = "id", rust_type = Uuid } ]
