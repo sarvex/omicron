@@ -8,18 +8,14 @@ use crate::app::sagas::{
 };
 use crate::db::datastore::UpdatePrecondition;
 use crate::{authn, db};
-use anyhow::{anyhow, Error};
+use anyhow::Error;
 use db::datastore::SwitchPortSettingsCombinedResult;
-use dpd_client::types::{
-    Ipv4Entry, Ipv6Entry, Link, LinkCreate, LinkId, PortFec, PortId, PortSpeed,
-};
-use dpd_client::{Cidr, Ipv4Cidr, Ipv6Cidr};
-use futures::StreamExt;
+use dpd_client::types::{LinkId, PortId, PortSettings};
 use ipnetwork::IpNetwork;
-use omicron_common::api::external::NameOrId;
+use omicron_common::api::external::{self, NameOrId};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::collections::HashMap;
+use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 use steno::ActionError;
@@ -46,23 +42,10 @@ declare_saga_actions! {
     GET_SWITCH_PORT_SETTINGS -> "switch_port_settings" {
         + spa_get_switch_port_settings
     }
-    ENSURE_SWITCH_PORT_LINK -> "original_switch_link" {
-        + spa_ensure_switch_port_link
-        - spa_undo_ensure_switch_port_link
+    ENSURE_SWITCH_PORT_SETTINGS -> "ensure_switch_port_settings" {
+        + spa_ensure_switch_port_settings
+        - spa_undo_ensure_switch_port_settings
     }
-    ENSURE_SWITCH_PORT_ADDRS -> "original_switch_port_addrs" {
-        + spa_ensure_switch_port_addrs
-        - spa_undo_ensure_switch_port_addrs
-    }
-    ENSURE_SWITCH_PORT_ROUTES -> "original_switch_port_routes" {
-        + spa_ensure_switch_port_routes
-        - spa_undo_ensure_switch_port_routes
-    }
-    //TODO links
-    //TODO lldp
-    //TODO interfaces
-    //TODO vlan interfaces
-    //TODO bgp peers
 }
 
 // switch port settings apply saga: definition
@@ -84,10 +67,7 @@ impl NexusSaga for SagaSwitchPortSettingsApply {
     ) -> Result<steno::Dag, SagaInitError> {
         builder.append(associate_switch_port_action());
         builder.append(get_switch_port_settings_action());
-        builder.append(ensure_switch_port_link_action());
-        builder.append(ensure_switch_port_addrs_action());
-        builder.append(ensure_switch_port_routes_action());
-
+        builder.append(ensure_switch_port_settings_action());
         Ok(builder.build()?)
     }
 }
@@ -146,218 +126,128 @@ async fn spa_get_switch_port_settings(
     Ok(port_settings)
 }
 
-async fn spa_ensure_switch_port_link(
-    sagactx: NexusActionContext,
-) -> Result<Option<Link>, ActionError> {
-    let osagactx = sagactx.user_data();
-    let params = sagactx.saga_params::<Params>()?;
-
-    let port_id: PortId = PortId::from_str(&params.switch_port_name)
-        .map_err(|e| ActionError::action_failed(e.to_string()))?;
-    //TODO breakouts
-    let link_id = &LinkId(0);
-
-    let dpd_client: Arc<dpd_client::Client> =
-        Arc::clone(&osagactx.nexus().dpd_client);
-
-    let link = match dpd_client.link_get(&port_id, &link_id).await {
-        Err(_) => {
-            //TODO handle not found vs other errors
-            dpd_client
-                .link_create(
-                    &port_id,
-                    &LinkCreate {
-                        fec: PortFec::None,          // TODO as parameter
-                        speed: PortSpeed::Speed100G, // TODO as parameter
-                        autoneg: true,               // TODO as parameter
-                        kr: false,                   // TODO as parameter
-                    },
-                )
-                .await
-                .map_err(|e| ActionError::action_failed(e.to_string()))?;
-            None
-        }
-        Ok(link) => Some(link.into_inner()),
+pub(crate) fn api_to_dpd_port_settings(
+    port_id: &PortId,
+    settings: &SwitchPortSettingsCombinedResult,
+) -> PortSettings {
+    let mut dpd_port_settings = PortSettings {
+        addrs: HashMap::new(),
+        routes: HashMap::new(),
+        tag: NEXUS_DPD_TAG.into(),
     };
 
-    dpd_client
-        .link_enabled_set(&port_id, &LinkId(0), true)
-        .await
-        .map_err(|e| ActionError::action_failed(e.to_string()))?;
-
-    Ok(link)
-}
-
-async fn spa_undo_ensure_switch_port_link(
-    sagactx: NexusActionContext,
-) -> Result<(), Error> {
-    let osagactx = sagactx.user_data();
-    let params = sagactx.saga_params::<Params>()?;
-    let dpd_client: Arc<dpd_client::Client> =
-        Arc::clone(&osagactx.nexus().dpd_client);
-
-    let port_id: PortId = PortId::from_str(&params.switch_port_name)
-        .map_err(|e| ActionError::action_failed(e.to_string()))?;
     //TODO breakouts
-    let link_id = &LinkId(0);
+    let link_id = LinkId(0);
 
-    let original_link: Option<Link> = sagactx.lookup("original_switch_link")?;
+    let addrs: Vec<IpAddr> =
+        settings.addresses.iter().map(|a| a.address.ip()).collect();
+    dpd_port_settings.addrs.insert(link_id.to_string(), addrs);
 
-    match original_link {
-        Some(link) => {
-            dpd_client.link_delete(&port_id, &link_id).await?;
-            dpd_client
-                .link_create(
-                    &port_id,
-                    &LinkCreate {
-                        fec: link.fec,
-                        speed: link.speed,
-                        autoneg: true, //TODO not in link? dpd bug?
-                        kr: false,     //TODO not in link? dpd bug?
-                    },
-                )
-                .await?;
-        }
-        None => {
-            dpd_client.link_delete(&port_id, &link_id).await?;
+    let mut routes: Vec<dpd_client::types::Route> = Vec::new();
+    for r in &settings.routes {
+        match &r.dst {
+            IpNetwork::V4(n) => {
+                routes.push(dpd_client::types::Route {
+                    cidr: dpd_client::Ipv4Cidr {
+                        prefix: n.ip(),
+                        prefix_len: n.prefix(),
+                    }
+                    .into(),
+                    link: link_id.clone(),
+                    switch_port: port_id.clone(),
+                    nexthop: Some(r.gw.ip()),
+                });
+            }
+            IpNetwork::V6(n) => {
+                routes.push(dpd_client::types::Route {
+                    cidr: dpd_client::Ipv6Cidr {
+                        prefix: n.ip(),
+                        prefix_len: n.prefix(),
+                    }
+                    .into(),
+                    link: link_id.clone(),
+                    switch_port: port_id.clone(),
+                    nexthop: Some(r.gw.ip()),
+                });
+            }
         }
     }
 
-    Ok(())
+    dpd_port_settings.routes.insert(link_id.to_string(), routes);
+    dpd_port_settings
 }
 
-async fn spa_ensure_switch_port_addrs(
+async fn spa_ensure_switch_port_settings(
     sagactx: NexusActionContext,
-) -> Result<(HashSet<Ipv4Addr>, HashSet<Ipv6Addr>), ActionError> {
+) -> Result<(), ActionError> {
     let osagactx = sagactx.user_data();
     let params = sagactx.saga_params::<Params>()?;
 
     let settings = sagactx
         .lookup::<SwitchPortSettingsCombinedResult>("switch_port_settings")?;
 
+    let port_id: PortId = PortId::from_str(&params.switch_port_name)
+        .map_err(|e| ActionError::action_failed(e.to_string()))?;
+
     let dpd_client: Arc<dpd_client::Client> =
         Arc::clone(&osagactx.nexus().dpd_client);
 
-    let addresses = settings.addresses.iter().map(|a| a.address.ip()).collect();
+    let dpd_port_settings = api_to_dpd_port_settings(&port_id, &settings);
 
-    ensure_switch_port_addresses(
-        &params.switch_port_name,
-        &dpd_client,
-        &addresses,
-    )
-    .await
-    .map_err(|e| ActionError::action_failed(e.to_string()))
-}
-
-async fn spa_undo_ensure_switch_port_addrs(
-    sagactx: NexusActionContext,
-) -> Result<(), Error> {
-    let osagactx = sagactx.user_data();
-    let params = sagactx.saga_params::<Params>()?;
-    let dpd_client: Arc<dpd_client::Client> =
-        Arc::clone(&osagactx.nexus().dpd_client);
-
-    let (v4, v6): (HashSet<Ipv4Addr>, HashSet<Ipv6Addr>) =
-        sagactx.lookup("original_switch_port_addrs")?;
-
-    let mut addresses: Vec<IpAddr> = Vec::new();
-    for a in v4 {
-        addresses.push(a.into())
-    }
-    for a in v6 {
-        addresses.push(a.into())
-    }
-
-    ensure_switch_port_addresses(
-        &params.switch_port_name,
-        &dpd_client,
-        &addresses,
-    )
-    .await
-    .map_err(|e| ActionError::action_failed(e.to_string()))?;
+    dpd_client
+        .port_settings_apply(&port_id, &dpd_port_settings)
+        .await
+        .map_err(|e| ActionError::action_failed(e.to_string()))?;
 
     Ok(())
 }
 
-pub(crate) async fn ensure_switch_port_addresses(
-    port_name: &str,
-    dpd_client: &Arc<dpd_client::Client>,
-    addresses: &Vec<IpAddr>,
-) -> Result<(HashSet<Ipv4Addr>, HashSet<Ipv6Addr>), Error> {
-    let port_id: PortId = PortId::from_str(port_name)
-        .map_err(|e| anyhow!("bad portname: {}: {}", port_name, e))?;
-    //TODO breakouts
-    let link_id = &LinkId(0);
+async fn spa_undo_ensure_switch_port_settings(
+    sagactx: NexusActionContext,
+) -> Result<(), Error> {
+    let osagactx = sagactx.user_data();
+    let params = sagactx.saga_params::<Params>()?;
+    let nexus = osagactx.nexus();
+    let opctx = crate::context::op_context_for_saga_action(
+        &sagactx,
+        &params.serialized_authn,
+    );
 
-    // collect live switch port addresses by family
-    let switch_v4_addrs: HashSet<Ipv4Addr> = dpd_client
-        .link_ipv4_list(&port_id, &link_id, None, None)
-        .await?
-        .items
-        .iter()
-        .map(|x| x.addr)
-        .collect();
+    let port_id: PortId = PortId::from_str(&params.switch_port_name)
+        .map_err(|e| external::Error::internal_error(e))?;
 
-    let switch_v6_addrs: HashSet<Ipv6Addr> = dpd_client
-        .link_ipv6_list(&port_id, &link_id, None, None)
-        .await?
-        .items
-        .iter()
-        .map(|x| x.addr)
-        .collect();
+    let orig_port_settings_id = sagactx
+        .lookup::<Option<Uuid>>("original_switch_port_settings_id")
+        .map_err(|e| external::Error::internal_error(&e.to_string()))?;
 
-    // collect settings addresses by family
-    let mut settings_v4_addrs: HashSet<Ipv4Addr> = HashSet::new();
-    let mut settings_v6_addrs: HashSet<Ipv6Addr> = HashSet::new();
+    let dpd_client: Arc<dpd_client::Client> =
+        Arc::clone(&osagactx.nexus().dpd_client);
 
-    for address in addresses {
-        match address {
-            IpAddr::V4(a) => settings_v4_addrs.insert(*a),
-            IpAddr::V6(a) => settings_v6_addrs.insert(*a),
-        };
-    }
+    let id = match orig_port_settings_id {
+        Some(id) => id,
+        None => {
+            dpd_client
+                .port_settings_clear(&port_id)
+                .await
+                .map_err(|e| external::Error::internal_error(&e.to_string()))?;
 
-    // determine addresses to be removed as the set difference of the settings
-    // addresses from the live addresses
+            return Ok(());
+        }
+    };
 
-    let v4_to_remove = switch_v4_addrs.difference(&settings_v4_addrs);
-    let v6_to_remove = switch_v6_addrs.difference(&settings_v6_addrs);
+    let settings = nexus
+        .switch_port_settings_get(&opctx, &NameOrId::Id(id))
+        .await
+        .map_err(ActionError::action_failed)?;
 
-    // TODO handle partial dpd updates. Maybe we should think about a
-    // transactional interface for dpd?
-    for a in v4_to_remove {
-        dpd_client.link_ipv4_delete(&port_id, &link_id, a).await?;
-    }
-    for a in v6_to_remove {
-        dpd_client.link_ipv6_delete(&port_id, &link_id, a).await?;
-    }
+    let dpd_port_settings = api_to_dpd_port_settings(&port_id, &settings);
 
-    // determine addresses to add as the set difference of the live addresses
-    // from the settings addresses
+    dpd_client
+        .port_settings_apply(&port_id, &dpd_port_settings)
+        .await
+        .map_err(|e| external::Error::internal_error(&e.to_string()))?;
 
-    let v4_to_add = settings_v4_addrs.difference(&switch_v4_addrs);
-    let v6_to_add = settings_v6_addrs.difference(&switch_v6_addrs);
-
-    for a in v4_to_add {
-        dpd_client
-            .link_ipv4_create(
-                &port_id,
-                &link_id,
-                &Ipv4Entry { addr: *a, tag: NEXUS_DPD_TAG.into() },
-            )
-            .await?;
-    }
-    for a in v6_to_add {
-        dpd_client
-            .link_ipv6_create(
-                &port_id,
-                &link_id,
-                &Ipv6Entry { addr: *a, tag: NEXUS_DPD_TAG.into() },
-            )
-            .await?;
-    }
-
-    Ok((switch_v4_addrs, switch_v6_addrs))
+    Ok(())
 }
 
 // a common route representation for dendrite and port settings
@@ -366,212 +256,6 @@ pub(crate) struct Route {
     pub dst: IpAddr,
     pub masklen: u8,
     pub nexthop: Option<IpAddr>,
-}
-
-async fn spa_ensure_switch_port_routes(
-    sagactx: NexusActionContext,
-) -> Result<(HashSet<Route>, HashSet<Route>), ActionError> {
-    let osagactx = sagactx.user_data();
-    let params = sagactx.saga_params::<Params>()?;
-
-    let settings = sagactx
-        .lookup::<SwitchPortSettingsCombinedResult>("switch_port_settings")?;
-
-    let dpd_client: Arc<dpd_client::Client> =
-        Arc::clone(&osagactx.nexus().dpd_client);
-
-    let mut routes: Vec<Route> = Vec::new();
-    for r in &settings.routes {
-        match &r.dst {
-            IpNetwork::V4(n) => {
-                routes.push(Route {
-                    dst: n.ip().into(),
-                    masklen: n.prefix(),
-                    nexthop: Some(r.gw.ip()),
-                });
-            }
-            IpNetwork::V6(n) => {
-                routes.push(Route {
-                    dst: n.ip().into(),
-                    masklen: n.prefix(),
-                    nexthop: Some(r.gw.ip()),
-                });
-            }
-        }
-    }
-
-    ensure_switch_port_routes(&params.switch_port_name, &dpd_client, &routes)
-        .await
-        .map_err(|e| ActionError::action_failed(e.to_string()))
-}
-
-async fn spa_undo_ensure_switch_port_routes(
-    sagactx: NexusActionContext,
-) -> Result<(), Error> {
-    let osagactx = sagactx.user_data();
-    let params = sagactx.saga_params::<Params>()?;
-    let dpd_client: Arc<dpd_client::Client> =
-        Arc::clone(&osagactx.nexus().dpd_client);
-
-    let (v4, v6): (HashSet<Route>, HashSet<Route>) =
-        sagactx.lookup("original_switch_port_routes")?;
-
-    let mut routes: Vec<Route> = Vec::new();
-    for r in v4 {
-        routes.push(r.clone())
-    }
-    for r in v6 {
-        routes.push(r.clone())
-    }
-
-    ensure_switch_port_routes(&params.switch_port_name, &dpd_client, &routes)
-        .await
-        .map_err(|e| ActionError::action_failed(e.to_string()))?;
-
-    Ok(())
-}
-
-pub(crate) async fn ensure_switch_port_routes(
-    port_name: &str,
-    dpd_client: &Arc<dpd_client::Client>,
-    routes: &Vec<Route>,
-) -> Result<(HashSet<Route>, HashSet<Route>), Error> {
-    let port_id: PortId = PortId::from_str(port_name)
-        .map_err(|e| anyhow!("bad portname: {}: {}", port_name, e))?;
-
-    //TODO breakouts
-    let link_id = LinkId(0);
-
-    // collect live switch routes
-    let mut switch_v4_routes: HashSet<Route> = HashSet::new();
-
-    let mut st = dpd_client.route_ipv4_list_stream(None);
-    loop {
-        let x = match st.next().await {
-            Some(x) => x?,
-            None => break,
-        };
-
-        if x.switch_port.as_str() != port_name {
-            continue;
-        }
-        let cidr = match x.cidr {
-            Cidr::V4(c) => c,
-            _ => continue,
-        };
-        switch_v4_routes.insert(Route {
-            dst: cidr.prefix.into(),
-            masklen: cidr.prefix_len,
-            nexthop: x.nexthop,
-        });
-    }
-
-    let mut switch_v6_routes: HashSet<Route> = HashSet::new();
-    let mut st = dpd_client.route_ipv6_list_stream(None);
-    loop {
-        let x = match st.next().await {
-            Some(x) => x?,
-            None => break,
-        };
-
-        if x.switch_port.as_str() != port_name {
-            continue;
-        }
-        let cidr = match x.cidr {
-            Cidr::V6(c) => c,
-            _ => continue,
-        };
-        switch_v6_routes.insert(Route {
-            dst: cidr.prefix.into(),
-            masklen: cidr.prefix_len,
-            nexthop: x.nexthop,
-        });
-    }
-
-    // collect setting routes
-    let mut settings_v4_routes: HashSet<Route> = HashSet::new();
-    let mut settings_v6_routes: HashSet<Route> = HashSet::new();
-
-    for r in routes {
-        match &r.dst {
-            IpAddr::V4(_) => settings_v4_routes.insert(r.clone()),
-            IpAddr::V6(_) => settings_v6_routes.insert(r.clone()),
-        };
-    }
-
-    // determine routes to be removed as the set difference of the settings
-    // routes from the live routes
-
-    let v4_to_remove = switch_v4_routes.difference(&settings_v4_routes);
-    let v6_to_remove = switch_v6_routes.difference(&settings_v6_routes);
-
-    for r in v4_to_remove {
-        dpd_client
-            .route_ipv4_delete(&Ipv4Cidr {
-                prefix: match r.dst {
-                    IpAddr::V4(a) => a,
-                    _ => continue,
-                },
-                prefix_len: r.masklen,
-            })
-            .await?;
-    }
-
-    for r in v6_to_remove {
-        dpd_client
-            .route_ipv6_delete(&Ipv6Cidr {
-                prefix: match r.dst {
-                    IpAddr::V6(a) => a,
-                    _ => continue,
-                },
-                prefix_len: r.masklen,
-            })
-            .await?;
-    }
-
-    // determine addresses to add as the set difference of the live addresses
-    // from the settings addresses
-
-    let v4_to_add = settings_v4_routes.difference(&switch_v4_routes);
-    let v6_to_add = settings_v6_routes.difference(&switch_v6_routes);
-
-    for r in v4_to_add {
-        dpd_client
-            .route_ipv4_create(&dpd_client::types::Route {
-                cidr: Cidr::V4(Ipv4Cidr {
-                    prefix: match r.dst {
-                        IpAddr::V4(a) => a,
-                        _ => continue,
-                    },
-                    prefix_len: r.masklen,
-                }),
-                switch_port: port_id.clone(),
-                link: link_id.clone(),
-                nexthop: r.nexthop,
-                tag: NEXUS_DPD_TAG.into(),
-            })
-            .await?;
-    }
-
-    for r in v6_to_add {
-        dpd_client
-            .route_ipv6_create(&dpd_client::types::Route {
-                cidr: Cidr::V6(Ipv6Cidr {
-                    prefix: match r.dst {
-                        IpAddr::V6(a) => a,
-                        _ => continue,
-                    },
-                    prefix_len: r.masklen,
-                }),
-                switch_port: port_id.clone(),
-                link: link_id.clone(),
-                nexthop: r.nexthop,
-                tag: NEXUS_DPD_TAG.into(),
-            })
-            .await?;
-    }
-
-    Ok((switch_v4_routes, switch_v6_routes))
 }
 
 async fn spa_disassociate_switch_port(

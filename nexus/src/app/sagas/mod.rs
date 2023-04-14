@@ -299,9 +299,6 @@ macro_rules! declare_saga_actions {
 }
 
 pub(crate) const NEXUS_DPD_TAG: &str = "nexus";
-pub(crate) use switch_port_settings_apply::ensure_switch_port_addresses;
-pub(crate) use switch_port_settings_apply::ensure_switch_port_routes;
-pub(crate) use switch_port_settings_apply::Route;
 
 pub(crate) use __action_name;
 pub(crate) use __emit_action;
