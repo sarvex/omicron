@@ -4,7 +4,9 @@
 
 //! Integration tests for operating on Ports
 
-use nexus_test_utils::http_testing::{AuthnMode, NexusRequest};
+use http::method::Method;
+use http::StatusCode;
+use nexus_test_utils::http_testing::{AuthnMode, NexusRequest, RequestBuilder};
 use nexus_test_utils_macros::nexus_test;
 use omicron_common::api::external::{
     self, IdentityMetadataCreateParams, NameOrId, SwitchPort,
@@ -13,8 +15,10 @@ use omicron_common::api::external::{
 use omicron_nexus::external_api::params::{
     Address, AddressConfig, AddressLotBlockCreate, AddressLotCreate,
     AddressLotKind, LinkConfig, LldpServiceConfig, Route, RouteConfig,
-    SwitchInterfaceConfig, SwitchInterfaceKind, SwitchPortSettingsCreate,
+    SwitchInterfaceConfig, SwitchInterfaceKind, SwitchPortApplySettings,
+    SwitchPortSettingsCreate,
 };
+use omicron_nexus::external_api::views::Rack;
 
 type ControlPlaneTestContext =
     nexus_test_utils::ControlPlaneTestContext<omicron_nexus::Server>;
@@ -186,13 +190,10 @@ async fn test_port_settings_basic_crud(ctx: &ControlPlaneTestContext) {
     .unwrap()
     .parsed_body()
     .unwrap();
-}
 
-#[nexus_test]
-async fn test_switch_port_basic_crud(ctx: &ControlPlaneTestContext) {
-    let client = &ctx.external_client;
+    // There should be one switch port to begin with, see
+    // Server::start_and_populate in nexus/src/lib.rs
 
-    // there should be no switch ports to begin with
     let ports = NexusRequest::iter_collection_authn::<SwitchPort>(
         client,
         "/v1/system/hardware/switch-port",
@@ -203,5 +204,34 @@ async fn test_switch_port_basic_crud(ctx: &ControlPlaneTestContext) {
     .expect("Failed to list switch ports")
     .all_items;
 
-    assert_eq!(ports.len(), 0, "Expected no ports");
+    assert_eq!(ports.len(), 1, "Expected one ports");
+
+    // apply port settings
+
+    let apply_settings = SwitchPortApplySettings {
+        port_settings: NameOrId::Name("portofino".parse().unwrap()),
+    };
+
+    let racks_url = "/v1/system/hardware/racks";
+    let racks: Vec<Rack> =
+        NexusRequest::iter_collection_authn(client, racks_url, "", None)
+            .await
+            .expect("failed to list racks")
+            .all_items;
+
+    let rack_id = racks[0].identity.id;
+
+    NexusRequest::new(
+        RequestBuilder::new(
+            client,
+            Method::POST,
+            &format!("/v1/system/hardware/switch-port/qsfp0/settings?rack_id={rack_id}&switch_location=switch0"),
+        )
+        .body(Some(&apply_settings))
+        .expect_status(Some(StatusCode::NO_CONTENT)),
+    )
+    .authn_as(AuthnMode::PrivilegedUser)
+    .execute()
+    .await
+    .unwrap();
 }
