@@ -133,7 +133,7 @@ async fn test_loopback_address_basic_crud(ctx: &ControlPlaneTestContext) {
         RequestBuilder::new(
             client,
             Method::DELETE,
-            "/v1/system/networking/address-lot?address_lot=parkinglot",
+            "/v1/system/networking/address-lot/parkinglot",
         )
         .expect_status(Some(StatusCode::BAD_REQUEST)),
     )
@@ -176,7 +176,7 @@ async fn test_loopback_address_basic_crud(ctx: &ControlPlaneTestContext) {
     // Verify we can now delete the address lot.
     NexusRequest::object_delete(
         client,
-        "/v1/system/networking/address-lot?address_lot=parkinglot",
+        "/v1/system/networking/address-lot/parkinglot",
     )
     .authn_as(AuthnMode::PrivilegedUser)
     .execute()

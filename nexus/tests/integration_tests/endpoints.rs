@@ -1748,7 +1748,7 @@ lazy_static! {
 
         VerifyEndpoint {
             url: &DEMO_ADDRESS_LOT_URL,
-            visibility: Visibility::Public,
+            visibility: Visibility::Protected,
             unprivileged_access: UnprivilegedAccess::None,
             allowed_methods: vec![
                 AllowedMethod::Delete,
@@ -1757,7 +1757,7 @@ lazy_static! {
 
         VerifyEndpoint {
             url: &DEMO_ADDRESS_LOT_BLOCKS_URL,
-            visibility: Visibility::Public,
+            visibility: Visibility::Protected,
             unprivileged_access: UnprivilegedAccess::None,
             allowed_methods: vec![
                 AllowedMethod::GetNonexistent

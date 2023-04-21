@@ -140,6 +140,14 @@ pub async fn make_resources(
         LookupType::ById(update_deployment_id),
     ));
 
+    let address_lot_id =
+        "43259fdc-c5c0-4a21-8b1d-2f673ad00d93".parse().unwrap();
+    builder.new_resource(authz::AddressLot::new(
+        authz::FLEET,
+        address_lot_id,
+        LookupType::ById(address_lot_id),
+    ));
+
     builder.build()
 }
 

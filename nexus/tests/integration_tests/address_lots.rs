@@ -117,7 +117,7 @@ async fn test_address_lot_basic_crud(ctx: &ControlPlaneTestContext) {
     // Verify there are lot blocks
     let blist = NexusRequest::iter_collection_authn::<AddressLotBlock>(
         client,
-        "/v1/system/networking/address-lot/blocks?address_lot=parkinglot",
+        "/v1/system/networking/address-lot/parkinglot/blocks",
         "",
         None,
     )
