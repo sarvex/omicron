@@ -10,7 +10,11 @@ use crate::db::datastore::UpdatePrecondition;
 use crate::{authn, db};
 use anyhow::Error;
 use db::datastore::SwitchPortSettingsCombinedResult;
-use dpd_client::types::{LinkId, PortId, PortSettings};
+use dpd_client::types::{
+    LinkCreate, LinkId, LinkSettings, PortFec, PortId, PortSettings, PortSpeed,
+    RouteSettingsV4, RouteSettingsV6,
+};
+use dpd_client::{Ipv4Cidr, Ipv6Cidr};
 use ipnetwork::IpNetwork;
 use omicron_common::api::external::{self, NameOrId};
 use serde::{Deserialize, Serialize};
@@ -129,52 +133,73 @@ async fn spa_get_switch_port_settings(
 pub(crate) fn api_to_dpd_port_settings(
     port_id: &PortId,
     settings: &SwitchPortSettingsCombinedResult,
-) -> PortSettings {
+) -> Result<PortSettings, String> {
     let mut dpd_port_settings = PortSettings {
-        addrs: HashMap::new(),
-        routes: HashMap::new(),
         tag: NEXUS_DPD_TAG.into(),
+        links: HashMap::new(),
+        v4_routes: HashMap::new(),
+        v6_routes: HashMap::new(),
     };
 
     //TODO breakouts
     let link_id = LinkId(0);
 
-    let addrs: Vec<IpAddr> =
-        settings.addresses.iter().map(|a| a.address.ip()).collect();
-    dpd_port_settings.addrs.insert(link_id.to_string(), addrs);
+    let link_settings = LinkSettings {
+        //TODO hardcode
+        params: LinkCreate {
+            autoneg: false,
+            kr: false,
+            fec: PortFec::None,
+            speed: PortSpeed::Speed100G,
+        },
+        addrs: settings.addresses.iter().map(|a| a.address.ip()).collect(),
+    };
+    dpd_port_settings.links.insert(link_id.to_string(), link_settings);
 
-    let mut routes: Vec<dpd_client::types::Route> = Vec::new();
     for r in &settings.routes {
         match &r.dst {
             IpNetwork::V4(n) => {
-                routes.push(dpd_client::types::Route {
-                    cidr: dpd_client::Ipv4Cidr {
-                        prefix: n.ip(),
-                        prefix_len: n.prefix(),
+                let gw = match r.gw.ip() {
+                    IpAddr::V4(gw) => gw,
+                    IpAddr::V6(_) => {
+                        return Err(
+                            "IPv4 destination cannot have IPv6 nexthop".into()
+                        )
                     }
-                    .into(),
-                    link: link_id.clone(),
-                    switch_port: port_id.clone(),
-                    nexthop: Some(r.gw.ip()),
-                });
+                };
+                dpd_port_settings.v4_routes.insert(
+                    Ipv4Cidr { prefix: n.ip(), prefix_len: n.prefix() }
+                        .to_string(),
+                    RouteSettingsV4 {
+                        link_id: link_id.clone(),
+                        port_id: port_id.clone(),
+                        nexthop: Some(gw),
+                    },
+                );
             }
             IpNetwork::V6(n) => {
-                routes.push(dpd_client::types::Route {
-                    cidr: dpd_client::Ipv6Cidr {
-                        prefix: n.ip(),
-                        prefix_len: n.prefix(),
+                let gw = match r.gw.ip() {
+                    IpAddr::V6(gw) => gw,
+                    IpAddr::V4(_) => {
+                        return Err(
+                            "IPv6 destination cannot have IPv4 nexthop".into()
+                        )
                     }
-                    .into(),
-                    link: link_id.clone(),
-                    switch_port: port_id.clone(),
-                    nexthop: Some(r.gw.ip()),
-                });
+                };
+                dpd_port_settings.v6_routes.insert(
+                    Ipv6Cidr { prefix: n.ip(), prefix_len: n.prefix() }
+                        .to_string(),
+                    RouteSettingsV6 {
+                        link_id: link_id.clone(),
+                        port_id: port_id.clone(),
+                        nexthop: Some(gw),
+                    },
+                );
             }
         }
     }
 
-    dpd_port_settings.routes.insert(link_id.to_string(), routes);
-    dpd_port_settings
+    Ok(dpd_port_settings)
 }
 
 async fn spa_ensure_switch_port_settings(
@@ -192,7 +217,8 @@ async fn spa_ensure_switch_port_settings(
     let dpd_client: Arc<dpd_client::Client> =
         Arc::clone(&osagactx.nexus().dpd_client);
 
-    let dpd_port_settings = api_to_dpd_port_settings(&port_id, &settings);
+    let dpd_port_settings = api_to_dpd_port_settings(&port_id, &settings)
+        .map_err(ActionError::action_failed)?;
 
     dpd_client
         .port_settings_apply(&port_id, &dpd_port_settings)
@@ -240,7 +266,8 @@ async fn spa_undo_ensure_switch_port_settings(
         .await
         .map_err(ActionError::action_failed)?;
 
-    let dpd_port_settings = api_to_dpd_port_settings(&port_id, &settings);
+    let dpd_port_settings = api_to_dpd_port_settings(&port_id, &settings)
+        .map_err(ActionError::action_failed)?;
 
     dpd_client
         .port_settings_apply(&port_id, &dpd_port_settings)

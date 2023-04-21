@@ -169,7 +169,8 @@ async fn spa_undo_clear_switch_port_settings(
         .await
         .map_err(ActionError::action_failed)?;
 
-    let dpd_port_settings = api_to_dpd_port_settings(&port_id, &settings);
+    let dpd_port_settings = api_to_dpd_port_settings(&port_id, &settings)
+        .map_err(ActionError::action_failed)?;
 
     dpd_client
         .port_settings_apply(&port_id, &dpd_port_settings)
