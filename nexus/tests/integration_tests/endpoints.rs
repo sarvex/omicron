@@ -358,9 +358,10 @@ lazy_static! {
 }
 
 lazy_static! {
+    pub static ref DEMO_LOOPBACK_CREATE_URL: String =
+        "/v1/system/networking/loopback-address".into();
     pub static ref DEMO_LOOPBACK_URL: String = format!(
-        "/v1/system/networking/loopback-address?loopback_address_id={}&rack_id={}&switch_location={}&address={}",
-        uuid::Uuid::new_v4(),
+        "/v1/system/networking/loopback-address/{}/{}/{}",
         uuid::Uuid::new_v4(),
         "switch0",
         "203.0.113.99/24",
@@ -1765,7 +1766,7 @@ lazy_static! {
         },
 
         VerifyEndpoint {
-            url: &DEMO_LOOPBACK_URL,
+            url: &DEMO_LOOPBACK_CREATE_URL,
             visibility: Visibility::Public,
             unprivileged_access: UnprivilegedAccess::None,
             allowed_methods: vec![
@@ -1773,6 +1774,14 @@ lazy_static! {
                     serde_json::to_value(&*DEMO_LOOPBACK_CREATE).unwrap(),
                 ),
                 AllowedMethod::Get,
+            ],
+        },
+
+        VerifyEndpoint {
+            url: &DEMO_LOOPBACK_URL,
+            visibility: Visibility::Protected,
+            unprivileged_access: UnprivilegedAccess::None,
+            allowed_methods: vec![
                 AllowedMethod::Delete
             ],
         },
@@ -1783,7 +1792,8 @@ lazy_static! {
             unprivileged_access: UnprivilegedAccess::None,
             allowed_methods: vec![
                 AllowedMethod::Post(
-                    serde_json::to_value(&*DEMO_SWITCH_PORT_SETTINGS_CREATE).unwrap(),
+                    serde_json::to_value(
+                        &*DEMO_SWITCH_PORT_SETTINGS_CREATE).unwrap(),
                 ),
                 AllowedMethod::Get,
                 AllowedMethod::Delete

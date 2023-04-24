@@ -4969,16 +4969,6 @@
           },
           {
             "in": "query",
-            "name": "loopback_address_id",
-            "description": "An optional loopback address id to use when selecting loopback addresses.",
-            "schema": {
-              "nullable": true,
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "query",
             "name": "page_token",
             "description": "Token returned by previous call to retrieve the subsequent page",
             "schema": {
@@ -5048,7 +5038,9 @@
             "$ref": "#/components/responses/Error"
           }
         }
-      },
+      }
+    },
+    "/v1/system/networking/loopback-address/{rack_id}/{switch_location}/{address}/{subnet_mask}": {
       "delete": {
         "tags": [
           "external-networking"
@@ -5057,16 +5049,17 @@
         "operationId": "networking_loopback_address_delete",
         "parameters": [
           {
-            "in": "query",
+            "in": "path",
             "name": "address",
             "description": "The IP address and subnet mask to use when selecting the loopback address.",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/IpNet"
+              "type": "string",
+              "format": "ip"
             }
           },
           {
-            "in": "query",
+            "in": "path",
             "name": "rack_id",
             "description": "The rack to use when selecting the loopback address.",
             "required": true,
@@ -5076,7 +5069,18 @@
             }
           },
           {
-            "in": "query",
+            "in": "path",
+            "name": "subnet_mask",
+            "description": "The IP address and subnet mask to use when selecting the loopback address.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "path",
             "name": "switch_location",
             "description": "The switch location to use when selecting the loopback address.",
             "required": true,

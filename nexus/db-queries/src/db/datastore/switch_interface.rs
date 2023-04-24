@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 use super::DataStore;
 
+use crate::authz;
 use crate::context::OpContext;
 use crate::db;
 use crate::db::datastore::address_lot::{
@@ -19,12 +20,10 @@ use async_bb8_diesel::{
 use diesel::result::Error as DieselError;
 use diesel::{ExpressionMethods, QueryDsl, SelectableHelper};
 use ipnetwork::IpNetwork;
-use nexus_types::external_api::params;
-use omicron_common::api::external::DataPageParams;
-use omicron_common::api::external::Error;
-use omicron_common::api::external::ResourceType;
+use nexus_types::external_api::params::LoopbackAddressCreate;
 use omicron_common::api::external::{
-    CreateResult, DeleteResult, ListResultVec, LookupResult, NameOrId,
+    CreateResult, DataPageParams, DeleteResult, Error, ListResultVec,
+    LookupResult, ResourceType,
 };
 use uuid::Uuid;
 
@@ -32,17 +31,14 @@ impl DataStore {
     pub async fn loopback_address_create(
         &self,
         opctx: &OpContext,
-        params: &params::LoopbackAddressCreate,
+        params: &LoopbackAddressCreate,
         id: Option<Uuid>,
+        authz_address_lot: &authz::AddressLot,
     ) -> CreateResult<LoopbackAddress> {
-        use db::schema::address_lot;
-        use db::schema::address_lot::dsl as lot_dsl;
         use db::schema::loopback_address::dsl;
 
         #[derive(Debug)]
         enum LoopbackAddressCreateError {
-            LotNotFound,
-            RackNotFound,
             ReserveBlock(ReserveBlockError),
         }
 
@@ -54,26 +50,7 @@ impl DataStore {
             .map_err(|_| Error::invalid_request("invalid address"))?;
 
         pool.transaction_async(|conn| async move {
-            let lot_id = match &params.address_lot {
-                NameOrId::Id(id) => *id,
-                NameOrId::Name(name) => {
-                    let name = name.to_string();
-                    lot_dsl::address_lot
-                        .filter(address_lot::time_deleted.is_null())
-                        .filter(address_lot::name.eq(name))
-                        .select(address_lot::id)
-                        .limit(1)
-                        .first_async::<Uuid>(&conn)
-                        .await
-                        .map_err(|e| match e {
-                            ConnectionError::Query(_) => TxnError::CustomError(
-                                LoopbackAddressCreateError::LotNotFound,
-                            ),
-                            e => e.into(),
-                        })?
-                }
-            };
-
+            let lot_id = authz_address_lot.id();
             let (block, rsvd_block) =
                 crate::db::datastore::address_lot::try_reserve_block(
                     lot_id,
@@ -88,21 +65,6 @@ impl DataStore {
                         )
                     }
                     ReserveBlockTxnError::Pool(err) => TxnError::Pool(err),
-                })?;
-
-            use db::schema::rack;
-            use db::schema::rack::dsl as rack_dsl;
-            rack_dsl::rack
-                .filter(rack::id.eq(params.rack_id))
-                .select(rack::id)
-                .limit(1)
-                .first_async::<Uuid>(&conn)
-                .await
-                .map_err(|e| match e {
-                    ConnectionError::Query(_) => TxnError::CustomError(
-                        LoopbackAddressCreateError::RackNotFound,
-                    ),
-                    e => e.into(),
                 })?;
 
             // Address block reserved, now create the loopback address.
@@ -127,12 +89,6 @@ impl DataStore {
         })
         .await
         .map_err(|e| match e {
-            TxnError::CustomError(LoopbackAddressCreateError::LotNotFound) => {
-                Error::invalid_request("address lot not found")
-            }
-            TxnError::CustomError(LoopbackAddressCreateError::RackNotFound) => {
-                Error::invalid_request("rack not found")
-            }
             TxnError::CustomError(
                 LoopbackAddressCreateError::ReserveBlock(
                     ReserveBlockError::AddressUnavailable,
@@ -161,18 +117,18 @@ impl DataStore {
     pub async fn loopback_address_delete(
         &self,
         opctx: &OpContext,
-        params: &params::LoopbackAddressSelector,
+        authz_loopback_address: &authz::LoopbackAddress,
     ) -> DeleteResult {
         use db::schema::address_lot_rsvd_block::dsl as rsvd_block_dsl;
         use db::schema::loopback_address::dsl;
 
-        let addr = params.address;
-        let inet: IpNetwork = addr.into();
+        let id = authz_loopback_address.id();
+
         let pool = self.pool_authorized(opctx).await?;
 
         pool.transaction_async(|conn| async move {
             let la = diesel::delete(dsl::loopback_address)
-                .filter(dsl::address.eq(inet))
+                .filter(dsl::id.eq(id))
                 .returning(LoopbackAddress::as_returning())
                 .get_result_async(&conn)
                 .await?;
@@ -191,21 +147,17 @@ impl DataStore {
     pub async fn loopback_address_get(
         &self,
         opctx: &OpContext,
-        params: &params::LoopbackAddressSelector,
+        authz_loopback_address: &authz::LoopbackAddress,
     ) -> LookupResult<LoopbackAddress> {
         use db::schema::loopback_address;
         use db::schema::loopback_address::dsl as loopback_dsl;
 
+        let id = authz_loopback_address.id();
+
         let pool = self.pool_authorized(opctx).await?;
-        let inet: IpNetwork = params.address.into();
 
         loopback_dsl::loopback_address
-            .filter(loopback_address::rack_id.eq(params.rack_id))
-            .filter(
-                loopback_address::switch_location
-                    .eq(params.switch_location.to_string()),
-            )
-            .filter(loopback_address::address.eq(inet))
+            .filter(loopback_address::id.eq(id))
             .select(LoopbackAddress::as_select())
             .limit(1)
             .first_async::<LoopbackAddress>(pool)

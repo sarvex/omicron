@@ -7,7 +7,8 @@ use crate::app::sagas::{
     declare_saga_actions, ActionRegistry, NexusSaga, SagaInitError,
 };
 use crate::authn;
-use crate::db::model::LoopbackAddress;
+use crate::authz;
+use crate::db::model::{LoopbackAddress, Name};
 use crate::external_api::params;
 use anyhow::{anyhow, Error};
 use nexus_types::identity::Asset;
@@ -15,11 +16,14 @@ use omicron_common::api::external::{IpNet, NameOrId};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use steno::ActionError;
+use uuid::Uuid;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Params {
     pub serialized_authn: authn::saga::Serialized,
-    pub selector: params::LoopbackAddressSelector,
+    pub rack_id: Uuid,
+    pub switch_location: Name,
+    pub address: IpNet,
 }
 
 declare_saga_actions! {
@@ -66,15 +70,29 @@ async fn slc_loopback_address_delete_record(
         &params.serialized_authn,
     );
 
+    let loopback_address_lookup = nexus
+        .loopback_address_lookup(
+            &opctx,
+            params.rack_id,
+            params.switch_location,
+            params.address,
+        )
+        .map_err(ActionError::action_failed)?;
+
+    let (.., authz_loopback_address) = loopback_address_lookup
+        .lookup_for(authz::Action::Delete)
+        .await
+        .map_err(ActionError::action_failed)?;
+
     let value = nexus
         .db_datastore
-        .loopback_address_get(&opctx, &params.selector)
+        .loopback_address_get(&opctx, &authz_loopback_address)
         .await
         .map_err(ActionError::action_failed)?;
 
     nexus
         .db_datastore
-        .loopback_address_delete(&opctx, &params.selector)
+        .loopback_address_delete(&opctx, &authz_loopback_address)
         .await
         .map_err(ActionError::action_failed)?;
 
@@ -112,9 +130,28 @@ async fn slc_loopback_address_undelete_record(
         mask: value.address.prefix(),
     };
 
+    let address_lot_lookup = nexus
+        .address_lot_lookup(&opctx, arg.address_lot.clone())
+        .map_err(ActionError::action_failed)?;
+    let (.., authz_address_lot) = address_lot_lookup
+        .lookup_for(authz::Action::Modify)
+        .await
+        .map_err(|e| ActionError::action_failed(e.to_string()))?;
+
+    // Just a check to make sure a valid rack id was passed in.
+    nexus
+        .rack_lookup(&opctx, &arg.rack_id)
+        .await
+        .map_err(ActionError::action_failed)?;
+
     nexus
         .db_datastore
-        .loopback_address_create(&opctx, &arg, Some(value.id()))
+        .loopback_address_create(
+            &opctx,
+            &arg,
+            Some(value.id()),
+            &authz_address_lot,
+        )
         .await?;
 
     Ok(())
@@ -138,7 +175,7 @@ async fn slc_loopback_address_delete(
     let dpd_client: Arc<dpd_client::Client> =
         Arc::clone(&osagactx.nexus().dpd_client);
 
-    match &params.selector.address {
+    match &params.address {
         IpNet::V4(a) => dpd_client.loopback_ipv4_delete(&a.ip()).await,
         IpNet::V6(a) => dpd_client.loopback_ipv6_delete(&a.ip()).await,
     }

@@ -79,6 +79,7 @@ use ref_cast::RefCast;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
+use std::net::IpAddr;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -2403,22 +2404,53 @@ async fn networking_loopback_address_create(
     apictx.external_latencies.instrument_dropshot_handler(&rqctx, handler).await
 }
 
+#[derive(Serialize, Deserialize, JsonSchema)]
+pub struct LoopbackAddressPath {
+    /// The rack to use when selecting the loopback address.
+    pub rack_id: Uuid,
+
+    /// The switch location to use when selecting the loopback address.
+    pub switch_location: Name,
+
+    /// The IP address and subnet mask to use when selecting the loopback
+    /// address.
+    pub address: IpAddr,
+
+    /// The IP address and subnet mask to use when selecting the loopback
+    /// address.
+    pub subnet_mask: u8,
+}
+
 /// Delete a loopback address.
 #[endpoint {
     method = DELETE,
-    path = "/v1/system/networking/loopback-address",
+    path = "/v1/system/networking/loopback-address/{rack_id}/{switch_location}/{address}/{subnet_mask}",
     tags = ["external-networking"],
 }]
 async fn networking_loopback_address_delete(
     rqctx: RequestContext<Arc<ServerContext>>,
-    query_params: Query<params::LoopbackAddressSelector>,
+    path: Path<LoopbackAddressPath>,
 ) -> Result<HttpResponseDeleted, HttpError> {
     let apictx = rqctx.context();
     let handler = async {
         let nexus = &apictx.nexus;
-        let selector = query_params.into_inner();
+        let path = path.into_inner();
         let opctx = crate::context::op_context_for_external_api(&rqctx).await?;
-        nexus.loopback_address_delete(&opctx, &selector).await?;
+        let addr = match IpNetwork::new(path.address, path.subnet_mask) {
+            Ok(addr) => Ok(addr),
+            Err(_) => Err(HttpError::for_bad_request(
+                None,
+                "invalid ip address".into(),
+            )),
+        }?;
+        nexus
+            .loopback_address_delete(
+                &opctx,
+                path.rack_id,
+                path.switch_location.clone(),
+                addr.into(),
+            )
+            .await?;
         Ok(HttpResponseDeleted())
     };
     apictx.external_latencies.instrument_dropshot_handler(&rqctx, handler).await
@@ -2432,7 +2464,7 @@ async fn networking_loopback_address_delete(
 }]
 async fn networking_loopback_address_list(
     rqctx: RequestContext<Arc<ServerContext>>,
-    query_params: Query<PaginatedById<params::LoopbackAddressIdSelector>>,
+    query_params: Query<PaginatedById>,
 ) -> Result<HttpResponseOk<ResultsPage<LoopbackAddress>>, HttpError> {
     let apictx = rqctx.context();
     let handler = async {

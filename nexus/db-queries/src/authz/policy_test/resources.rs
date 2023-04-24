@@ -148,6 +148,14 @@ pub async fn make_resources(
         LookupType::ById(address_lot_id),
     ));
 
+    let loopback_address_id =
+        "9efbf1b1-16f9-45ab-864a-f7ebe501ae5b".parse().unwrap();
+    builder.new_resource(authz::LoopbackAddress::new(
+        authz::FLEET,
+        loopback_address_id,
+        LookupType::ById(loopback_address_id),
+    ));
+
     builder.build()
 }
 

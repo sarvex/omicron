@@ -148,11 +148,12 @@ async fn test_loopback_address_basic_crud(ctx: &ControlPlaneTestContext) {
     NexusRequest::object_delete(
         client,
         &format!(
-            "{}?address={}&rack_id={}&switch_location={}",
+            "{}/{}/{}/{}/{}",
             "/v1/system/networking/loopback-address",
-            "203.0.113.99%2F24",
             rack_id,
             "switch0",
+            "203.0.113.99",
+            24,
         ),
     )
     .authn_as(AuthnMode::PrivilegedUser)

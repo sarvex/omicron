@@ -7,16 +7,33 @@ use crate::authn;
 use crate::authz;
 use crate::db;
 use crate::external_api::params;
-use db::model::LoopbackAddress;
+use db::model::{LoopbackAddress, Name};
 use nexus_db_queries::context::OpContext;
+use nexus_db_queries::db::lookup;
+use nexus_db_queries::db::lookup::LookupPath;
+use omicron_common::api::external::LookupResult;
 use omicron_common::api::external::{
-    CreateResult, DataPageParams, DeleteResult, Error, InternalContext,
+    CreateResult, DataPageParams, DeleteResult, Error, InternalContext, IpNet,
     ListResultVec,
 };
 use std::sync::Arc;
 use uuid::Uuid;
 
 impl super::Nexus {
+    pub fn loopback_address_lookup<'a>(
+        &'a self,
+        opctx: &'a OpContext,
+        rack_id: Uuid,
+        switch_location: Name,
+        address: IpNet,
+    ) -> LookupResult<lookup::LoopbackAddress<'a>> {
+        Ok(LookupPath::new(opctx, &self.db_datastore).loopback_address(
+            rack_id,
+            switch_location,
+            address.into(),
+        ))
+    }
+
     pub async fn loopback_address_create(
         self: &Arc<Self>,
         opctx: &OpContext,
@@ -48,13 +65,15 @@ impl super::Nexus {
     pub async fn loopback_address_delete(
         self: &Arc<Self>,
         opctx: &OpContext,
-        selector: &params::LoopbackAddressSelector,
+        rack_id: Uuid,
+        switch_location: Name,
+        address: IpNet,
     ) -> DeleteResult {
-        opctx.authorize(authz::Action::Modify, &authz::FLEET).await?;
-        validate_switch_location(selector.switch_location.as_str())?;
         let saga_params = sagas::loopback_address_delete::Params {
             serialized_authn: authn::saga::Serialized::for_opctx(opctx),
-            selector: selector.clone(),
+            address,
+            rack_id,
+            switch_location: switch_location,
         };
 
         self.execute_saga::<

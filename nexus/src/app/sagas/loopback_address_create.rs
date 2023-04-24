@@ -7,6 +7,7 @@ use crate::app::sagas::{
     declare_saga_actions, ActionRegistry, NexusSaga, SagaInitError,
 };
 use crate::authn;
+use crate::authz;
 use crate::db::model::LoopbackAddress;
 use crate::external_api::params;
 use anyhow::Error;
@@ -66,6 +67,20 @@ async fn slc_loopback_address_create_record(
         &params.serialized_authn,
     );
 
+    let address_lot_lookup = nexus
+        .address_lot_lookup(&opctx, params.loopback_address.address_lot.clone())
+        .map_err(ActionError::action_failed)?;
+    let (.., authz_address_lot) = address_lot_lookup
+        .lookup_for(authz::Action::Modify)
+        .await
+        .map_err(|e| ActionError::action_failed(e.to_string()))?;
+
+    // Just a check to make sure a valid rack id was passed in.
+    nexus
+        .rack_lookup(&opctx, &params.loopback_address.rack_id)
+        .await
+        .map_err(ActionError::action_failed)?;
+
     // If there is a failure down the road, this record will get cleaned up by
     // the unwind action slc_loopback_address_delete_record. In the case that
     // the saga is retried, we will just retry with a new id, returning that to
@@ -73,7 +88,12 @@ async fn slc_loopback_address_create_record(
     // is ok.
     let value = nexus
         .db_datastore
-        .loopback_address_create(&opctx, &params.loopback_address, None)
+        .loopback_address_create(
+            &opctx,
+            &params.loopback_address,
+            None,
+            &authz_address_lot,
+        )
         .await
         .map_err(ActionError::action_failed)?;
 
@@ -92,13 +112,20 @@ async fn slc_loopback_address_delete_record(
         &params.serialized_authn,
     );
 
-    let selector = params::LoopbackAddressSelector {
-        rack_id: params.loopback_address.rack_id,
-        switch_location: params.loopback_address.switch_location.clone(),
-        address: params.loopback_address.address.into(),
-    };
+    let loopback_address_lookup = nexus.loopback_address_lookup(
+        &opctx,
+        params.loopback_address.rack_id,
+        params.loopback_address.switch_location.clone().into(),
+        params.loopback_address.address.into(),
+    )?;
 
-    nexus.db_datastore.loopback_address_delete(&opctx, &selector).await?;
+    let (.., authz_loopback_address) =
+        loopback_address_lookup.lookup_for(authz::Action::Delete).await?;
+
+    nexus
+        .db_datastore
+        .loopback_address_delete(&opctx, &authz_loopback_address)
+        .await?;
 
     Ok(())
 }

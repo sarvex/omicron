@@ -18,7 +18,7 @@ networking_address_lot_create            POST     /v1/system/networking/address-
 networking_address_lot_delete            DELETE   /v1/system/networking/address-lot/{address_lot}
 networking_address_lot_list              GET      /v1/system/networking/address-lot
 networking_loopback_address_create       POST     /v1/system/networking/loopback-address
-networking_loopback_address_delete       DELETE   /v1/system/networking/loopback-address
+networking_loopback_address_delete       DELETE   /v1/system/networking/loopback-address/{rack_id}/{switch_location}/{address}/{subnet_mask}
 networking_loopback_address_list         GET      /v1/system/networking/loopback-address
 networking_switch_port_apply_settings    POST     /v1/system/hardware/switch-port/{port}/settings
 networking_switch_port_clear_settings    DELETE   /v1/system/hardware/switch-port/{port}/settings

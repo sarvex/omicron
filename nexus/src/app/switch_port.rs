@@ -78,7 +78,7 @@ impl super::Nexus {
         opctx: &OpContext,
         pagparams: &DataPageParams<'_, Uuid>,
     ) -> ListResultVec<SwitchPort> {
-        opctx.authorize(authz::Action::ListChildren, &authz::FLEET).await?;
+        opctx.authorize(authz::Action::Read, &authz::FLEET).await?;
         self.db_datastore.switch_port_list(opctx, pagparams).await
     }
 

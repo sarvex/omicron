@@ -1247,28 +1247,6 @@ pub struct LoopbackAddressCreate {
     pub mask: u8,
 }
 
-/// Select a loopback address by rack id, switch location and address.
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
-pub struct LoopbackAddressSelector {
-    /// The rack to use when selecting the loopback address.
-    pub rack_id: Uuid,
-
-    /// The switch location to use when selecting the loopback address.
-    pub switch_location: Name,
-
-    /// The IP address and subnet mask to use when selecting the loopback
-    /// address.
-    pub address: IpNet,
-}
-
-/// Select a loopback address by an optional id.
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
-pub struct LoopbackAddressIdSelector {
-    /// An optional loopback address id to use when selecting loopback
-    /// addresses.
-    pub loopback_address_id: Option<Uuid>,
-}
-
 /// Parameters for creating a port settings group.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SwtichPortSettingsGroupCreate {
