@@ -49,6 +49,8 @@ impl DataStore {
 
         self.pool_authorized(opctx)
             .await?
+            // TODO https://github.com/oxidecomputer/omicron/issues/2811
+            // Audit external networking database transaction usage
             .transaction_async(|conn| async move {
                 let lot = AddressLot::new(&params.identity, params.kind.into());
 
@@ -117,6 +119,8 @@ impl DataStore {
 
         type TxnError = TransactionError<AddressLotDeleteError>;
 
+        // TODO https://github.com/oxidecomputer/omicron/issues/2811
+        // Audit external networking database transaction usage
         pool.transaction_async(|conn| async move {
             let rsvd: Vec<AddressLotRsvdBlock> =
                 rsvd_block_dsl::address_lot_rsvd_block

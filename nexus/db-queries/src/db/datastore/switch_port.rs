@@ -127,6 +127,8 @@ impl DataStore {
 
         let pool = self.pool_authorized(opctx).await?;
 
+        // TODO https://github.com/oxidecomputer/omicron/issues/2811
+        // Audit external networking database transaction usage
         pool.transaction_async(|conn| async move {
 
             // create the top level port settings object
@@ -442,6 +444,8 @@ impl DataStore {
             Some(name_or_id) => name_or_id,
         };
 
+        // TODO https://github.com/oxidecomputer/omicron/issues/2811
+        // Audit external networking database transaction usage
         pool.transaction_async(|conn| async move {
 
             use db::schema::switch_port_settings;
@@ -646,6 +650,8 @@ impl DataStore {
 
         let pool = self.pool_authorized(opctx).await?;
 
+        // TODO https://github.com/oxidecomputer/omicron/issues/2811
+        // Audit external networking database transaction usage
         pool.transaction_async(|conn| async move {
 
             // get the top level port settings object
@@ -831,6 +837,8 @@ impl DataStore {
             port.to_string(),
         );
 
+        // TODO https://github.com/oxidecomputer/omicron/issues/2811
+        // Audit external networking database transaction usage
         pool.transaction_async(|conn| async move {
             use db::schema::rack;
             use db::schema::rack::dsl as rack_dsl;
@@ -893,6 +901,8 @@ impl DataStore {
 
         let pool = self.pool_authorized(opctx).await?;
 
+        // TODO https://github.com/oxidecomputer/omicron/issues/2811
+        // Audit external networking database transaction usage
         pool.transaction_async(|conn| async move {
             use db::schema::switch_port;
             use db::schema::switch_port::dsl as switch_port_dsl;

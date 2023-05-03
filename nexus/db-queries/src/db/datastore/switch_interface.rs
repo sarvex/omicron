@@ -49,6 +49,8 @@ impl DataStore {
         let inet = IpNetwork::new(params.address, params.mask)
             .map_err(|_| Error::invalid_request("invalid address"))?;
 
+        // TODO https://github.com/oxidecomputer/omicron/issues/2811
+        // Audit external networking database transaction usage
         pool.transaction_async(|conn| async move {
             let lot_id = authz_address_lot.id();
             let (block, rsvd_block) =
@@ -126,6 +128,8 @@ impl DataStore {
 
         let pool = self.pool_authorized(opctx).await?;
 
+        // TODO https://github.com/oxidecomputer/omicron/issues/2811
+        // Audit external networking database transaction usage
         pool.transaction_async(|conn| async move {
             let la = diesel::delete(dsl::loopback_address)
                 .filter(dsl::id.eq(id))

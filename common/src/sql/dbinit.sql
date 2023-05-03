@@ -2221,6 +2221,8 @@ CREATE TABLE omicron.public.loopback_address (
     address INET NOT NULL
 );
 
+/* TODO https://github.com/oxidecomputer/omicron/issues/3001 */
+
 CREATE UNIQUE INDEX ON omicron.public.loopback_address (
     address, rack_id, switch_location
 );
