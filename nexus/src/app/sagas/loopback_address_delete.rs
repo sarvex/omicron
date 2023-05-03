@@ -170,8 +170,9 @@ async fn slc_loopback_address_delete(
         return Ok(());
     };
 
-    //TODO how do we know this is the right dpd client? There will be at least
-    //two and in multirack 2*N where N is the number of racks.
+    // TODO https://github.com/oxidecomputer/omicron/issues/2760
+    // how do we know this is the right dpd client? There will be at least
+    // two and in multirack 2*N where N is the number of racks.
     let dpd_client: Arc<dpd_client::Client> =
         Arc::clone(&osagactx.nexus().dpd_client);
 

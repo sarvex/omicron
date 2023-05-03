@@ -25,6 +25,7 @@ pub struct ClientState {
 }
 
 // XXX delete everything below once we use the real dpd-client crate.
+// https://github.com/oxidecomputer/omicron/issues/2775
 
 use std::convert::TryFrom;
 use std::fmt;
