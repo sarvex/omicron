@@ -104,6 +104,16 @@ impl fmt::Display for Mountpoint {
     }
 }
 
+/// This is the path for an encryption key used by ZFS
+#[derive(Debug, Clone)]
+pub struct Keypath(pub PathBuf);
+
+impl fmt::Display for Keypath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.display())
+    }
+}
+
 #[cfg_attr(any(test, feature = "testing"), mockall::automock, allow(dead_code))]
 impl Zfs {
     /// Lists all datasets within a pool or existing dataset.
@@ -142,6 +152,7 @@ impl Zfs {
         mountpoint: Mountpoint,
         zoned: bool,
         do_format: bool,
+        keypath: Option<Keypath>,
     ) -> Result<(), EnsureFilesystemError> {
         // If the dataset exists, we're done.
         let mut command = std::process::Command::new(ZFS);
@@ -173,6 +184,17 @@ impl Zfs {
         let cmd = command.args(&[ZFS, "create"]);
         if zoned {
             cmd.args(&["-o", "zoned=on"]);
+        }
+        if let Some(keypath) = keypath {
+            let keyloc = format!("keylocation=file://{}", keypath.to_string());
+            cmd.args(&[
+                "-o",
+                "encryption=aes-256-gcm",
+                "-o",
+                "keyformat=raw",
+                "-o",
+                &keyloc,
+            ]);
         }
         cmd.args(&["-o", &format!("mountpoint={}", mountpoint), name]);
         execute(cmd).map_err(|err| EnsureFilesystemError {
