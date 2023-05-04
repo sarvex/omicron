@@ -34,9 +34,9 @@ pub enum SidecarRevision {
 #[derive(Debug, Clone, Deserialize)]
 pub struct SoftPortConfig {
     /// Number of front ports
-    pub front: u8,
+    pub front_port_count: u8,
     /// Number of rear ports
-    pub rear: u8,
+    pub rear_port_count: u8,
 }
 
 /// Configuration for a sled agent

@@ -171,7 +171,7 @@ impl RackSetupService {
         // have a management network, so we hard-code the list of members and
         // accept it as a parameter instead.
         member_device_id_certs: Vec<Ed25519Certificate>,
-        sidecar_external_radix: u8,
+        external_port_count: u8,
     ) -> Self {
         let handle = tokio::task::spawn(async move {
             let svc = ServiceInner::new(log.clone());
@@ -180,7 +180,7 @@ impl RackSetupService {
                     &config,
                     local_bootstrap_agent,
                     &member_device_id_certs,
-                    sidecar_external_radix,
+                    external_port_count,
                 )
                 .await
             {
@@ -593,7 +593,7 @@ impl ServiceInner {
         config: &Config,
         sled_plan: &SledPlan,
         service_plan: &ServicePlan,
-        sidecar_external_radix: u8,
+        external_port_count: u8,
     ) -> Result<(), SetupServiceError> {
         info!(self.log, "Handing off control to Nexus");
 
@@ -790,7 +790,7 @@ impl ServiceInner {
             // the need for unencrypted communication.
             certs: vec![],
             internal_dns_zone_config: d2n_params(&service_plan.dns_config),
-            sidecar_external_radix,
+            external_port_count,
         };
 
         let notify_nexus = || async {
@@ -866,7 +866,7 @@ impl ServiceInner {
         config: &Config,
         local_bootstrap_agent: BootstrapAgentHandle,
         member_device_id_certs: &[Ed25519Certificate],
-        sidecar_external_radix: u8,
+        external_port_count: u8,
     ) -> Result<(), SetupServiceError> {
         info!(self.log, "Injecting RSS configuration: {:#?}", config);
 
@@ -898,7 +898,7 @@ impl ServiceInner {
                 &config,
                 &sled_plan,
                 &service_plan,
-                sidecar_external_radix,
+                external_port_count,
             )
             .await?;
             return Ok(());
@@ -1098,7 +1098,7 @@ impl ServiceInner {
             &config,
             &plan,
             &service_plan,
-            sidecar_external_radix,
+            external_port_count,
         )
         .await?;
 

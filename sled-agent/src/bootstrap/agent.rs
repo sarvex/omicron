@@ -775,7 +775,7 @@ impl Agent {
                 .unwrap_or_default(),
             match &self.sled_config.sidecar_revision {
                 SidecarRevision::Physical(_) => SIDECAR_REV_A_B_N_QSFP28_PORTS,
-                SidecarRevision::Soft(config) => config.front,
+                SidecarRevision::Soft(config) => config.front_port_count,
             },
         )
         .await?;

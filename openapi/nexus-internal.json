@@ -2194,6 +2194,12 @@
               "$ref": "#/components/schemas/DatasetCreateRequest"
             }
           },
+          "external_port_count": {
+            "description": "The number of external qsfp ports per sidecar",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0
+          },
           "internal_dns_zone_config": {
             "description": "initial internal DNS config",
             "allOf": [
@@ -2215,21 +2221,15 @@
             "items": {
               "$ref": "#/components/schemas/ServicePutRequest"
             }
-          },
-          "sidecar_external_radix": {
-            "description": "The number of external qsfp ports per sidecar",
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0
           }
         },
         "required": [
           "certs",
           "datasets",
+          "external_port_count",
           "internal_dns_zone_config",
           "internal_services_ip_pool_ranges",
-          "services",
-          "sidecar_external_radix"
+          "services"
         ]
       },
       "Sample": {

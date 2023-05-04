@@ -1198,11 +1198,11 @@ impl ServiceManager {
                             };
                             smfh.setprop(
                                 "config/front_ports",
-                                &s.front.to_string(),
+                                &s.front_port_count.to_string(),
                             )?;
                             smfh.setprop(
                                 "config/rear_ports",
-                                &s.rear.to_string(),
+                                &s.rear_port_count.to_string(),
                             )?;
                             smfh.setprop(
                                 "config/port_config",

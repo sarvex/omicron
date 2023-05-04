@@ -266,7 +266,7 @@ impl Server {
             internal_services_ip_pool_ranges: vec![],
             certs: vec![],
             internal_dns_zone_config: d2n_params(&dns_config),
-            sidecar_external_radix: 1,
+            external_port_count: 1,
         };
 
         Ok((
