@@ -12,6 +12,7 @@ use futures::FutureExt;
 use futures::StreamExt;
 use illumos_utils::zpool::{ZpoolKind, ZpoolName};
 use illumos_utils::{zfs::Mountpoint, zpool::ZpoolInfo};
+use key_manager::StorageKeyRequester;
 use nexus_client::types::PhysicalDiskDeleteRequest;
 use nexus_client::types::PhysicalDiskKind;
 use nexus_client::types::PhysicalDiskPutRequest;
@@ -751,6 +752,10 @@ struct StorageManagerInner {
 
     tx: mpsc::Sender<StorageWorkerRequest>,
 
+    // A mechanism for requesting disk encryption keys from the
+    // [`key_manager::KeyManager`]
+    key_requester: StorageKeyRequester,
+
     // A handle to a worker which updates "pools".
     task: JoinHandle<Result<(), Error>>,
 }
@@ -763,7 +768,7 @@ pub struct StorageManager {
 
 impl StorageManager {
     /// Creates a new [`StorageManager`] which should manage local storage.
-    pub async fn new(log: &Logger) -> Self {
+    pub async fn new(log: &Logger, key_requester: StorageKeyRequester) -> Self {
         let log = log.new(o!("component" => "StorageManager"));
         let resources = StorageResources {
             disks: Arc::new(Mutex::new(HashMap::new())),
@@ -776,6 +781,7 @@ impl StorageManager {
                 log: log.clone(),
                 resources: resources.clone(),
                 tx,
+                key_requester,
                 task: tokio::task::spawn(async move {
                     let mut worker = StorageWorker {
                         log,

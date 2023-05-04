@@ -2336,6 +2336,7 @@ impl ServiceManager {
 mod test {
     use super::*;
     use crate::params::{ServiceZoneService, ZoneType};
+    use async_trait::async_trait;
     use illumos_utils::{
         dladm::{
             Etherstub, MockDladm, BOOTSTRAP_ETHERSTUB_NAME,
@@ -2343,6 +2344,10 @@ mod test {
         },
         svc,
         zone::MockZones,
+    };
+    use key_manager::{
+        KeyManager, SecretRetriever, SecretRetrieverError, SecretState,
+        StorageKeyRequester, VersionedIkm,
     };
     use std::net::Ipv6Addr;
     use std::os::unix::process::ExitStatusExt;
@@ -2489,6 +2494,42 @@ mod test {
         }
     }
 
+    pub struct TestSecretRetriever {}
+
+    #[async_trait]
+    impl SecretRetriever for TestSecretRetriever {
+        /// TODO: Figure out where we want our local key material to come from
+        /// See RFD 388
+        async fn get_latest(
+            &self,
+        ) -> Result<VersionedIkm, SecretRetrieverError> {
+            let epoch = 0;
+            let salt = [0u8; 32];
+            let secret = [0x1d; 32];
+
+            Ok(VersionedIkm::new(epoch, salt, &secret))
+        }
+
+        /// We don't plan to do any key rotation before trust quorum is ready
+        async fn get(
+            &self,
+            epoch: u64,
+        ) -> Result<SecretState, SecretRetrieverError> {
+            if epoch != 0 {
+                return Err(SecretRetrieverError::NoSuchEpoch(epoch));
+            }
+            Ok(SecretState::Current(self.get_latest().await?))
+        }
+    }
+
+    async fn spawn_key_manager() -> StorageKeyRequester {
+        let (mut key_manager, storage_key_requester) =
+            KeyManager::new(TestSecretRetriever {});
+
+        tokio::spawn(async move { key_manager.run().await });
+        storage_key_requester
+    }
+
     #[tokio::test]
     #[serial_test::serial]
     async fn test_ensure_service() {
@@ -2496,6 +2537,7 @@ mod test {
             omicron_test_utils::dev::test_setup_log("test_ensure_service");
         let log = logctx.log.clone();
         let test_config = TestConfig::new().await;
+        let storage_key_requester = spawn_key_manager().await;
 
         let mgr = ServiceManager::new(
             log.clone(),
@@ -2508,7 +2550,7 @@ mod test {
             "rev-test".to_string(),
             SWITCH_ZONE_BOOTSTRAP_IP,
             vec![],
-            StorageManager::new(&log).await,
+            StorageManager::new(&log, storage_key_requester).await,
         )
         .await
         .unwrap();
@@ -2541,6 +2583,7 @@ mod test {
         );
         let log = logctx.log.clone();
         let test_config = TestConfig::new().await;
+        let storage_key_requester = spawn_key_manager().await;
 
         let mgr = ServiceManager::new(
             log.clone(),
@@ -2553,7 +2596,7 @@ mod test {
             "rev-test".to_string(),
             SWITCH_ZONE_BOOTSTRAP_IP,
             vec![],
-            StorageManager::new(&log).await,
+            StorageManager::new(&log, storage_key_requester).await,
         )
         .await
         .unwrap();
@@ -2587,6 +2630,7 @@ mod test {
         );
         let log = logctx.log.clone();
         let test_config = TestConfig::new().await;
+        let storage_key_requester = spawn_key_manager().await;
 
         // First, spin up a ServiceManager, create a new service, and tear it
         // down.
@@ -2601,7 +2645,7 @@ mod test {
             "rev-test".to_string(),
             SWITCH_ZONE_BOOTSTRAP_IP,
             vec![],
-            StorageManager::new(&log).await,
+            StorageManager::new(&log, storage_key_requester).await,
         )
         .await
         .unwrap();
@@ -2637,7 +2681,7 @@ mod test {
             "rev-test".to_string(),
             SWITCH_ZONE_BOOTSTRAP_IP,
             vec![],
-            StorageManager::new(&log).await,
+            StorageManager::new(&log, storage_key_requester).await,
         )
         .await
         .unwrap();
@@ -2668,6 +2712,7 @@ mod test {
         );
         let log = logctx.log.clone();
         let test_config = TestConfig::new().await;
+        let storage_key_requester = spawn_key_manager().await;
 
         // First, spin up a ServiceManager, create a new service, and tear it
         // down.
@@ -2682,7 +2727,7 @@ mod test {
             "rev-test".to_string(),
             SWITCH_ZONE_BOOTSTRAP_IP,
             vec![],
-            StorageManager::new(&log).await,
+            StorageManager::new(&log, storage_key_requester).await,
         )
         .await
         .unwrap();
@@ -2708,6 +2753,11 @@ mod test {
         let config = test_config.make_config();
         std::fs::remove_file(&config.all_svcs_ledger_path).unwrap();
 
+        // We don't really have a need to make the StorageKeyRequester `Clone`
+        // and we want to keep the channel buffer size management simple. So
+        // for tests, just create another key manager and `storage_key_requester`.
+        // They all manage the same hardcoded test secrets and will derive the same keys.
+        let storage_key_requester = spawn_key_manager().await;
         // Observe that the old service is not re-initialized.
         let mgr = ServiceManager::new(
             logctx.log.clone(),
@@ -2720,7 +2770,7 @@ mod test {
             "rev-test".to_string(),
             SWITCH_ZONE_BOOTSTRAP_IP,
             vec![],
-            StorageManager::new(&log).await,
+            StorageManager::new(&log, storage_key_requester).await,
         )
         .await
         .unwrap();
