@@ -2352,6 +2352,7 @@ CREATE TABLE omicron.public.switch_port_settings_route_config (
     dst INET,
     gw INET,
 
+    /* TODO https://github.com/oxidecomputer/omicron/issues/3013 */
     PRIMARY KEY (port_settings_id, interface_name, dst, gw)
 );
 
@@ -2362,6 +2363,7 @@ CREATE TABLE omicron.public.switch_port_settings_bgp_peer_config (
     interface_name TEXT,
     addr INET,
 
+    /* TODO https://github.com/oxidecomputer/omicron/issues/3013 */
     PRIMARY KEY (port_settings_id, interface_name, addr)
 );
 
@@ -2400,6 +2402,7 @@ CREATE TABLE omicron.public.bgp_announcement (
     address_lot_block_id UUID NOT NULL,
     network INET,
 
+    /* TODO https://github.com/oxidecomputer/omicron/issues/3013 */
     PRIMARY KEY (announce_set_id, network)
 );
 
@@ -2410,6 +2413,7 @@ CREATE TABLE omicron.public.switch_port_settings_address_config (
     address INET,
     interface_name TEXT,
 
+    /* TODO https://github.com/oxidecomputer/omicron/issues/3013 */
     PRIMARY KEY (port_settings_id, address, interface_name)
 );
 
