@@ -4605,6 +4605,7 @@ dependencies = [
  "internal-dns",
  "ipnetwork",
  "itertools",
+ "key-manager",
  "macaddr",
  "mockall",
  "nexus-client 0.1.0",

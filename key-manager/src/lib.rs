@@ -63,7 +63,8 @@ pub enum Error {
 #[derive(Zeroize, ZeroizeOnDrop, Default)]
 struct Aes256GcmDiskEncryptionKey(Box<[u8; 32]>);
 
-/// A Disk encryption key to be used with ZFS datasets for U.2 devices
+/// A Disk encryption key for a given epoch to be used with ZFS datasets for
+/// U.2 devices
 pub struct VersionedAes256GcmDiskEncryptionKey {
     epoch: u64,
     key: Secret<Aes256GcmDiskEncryptionKey>,
