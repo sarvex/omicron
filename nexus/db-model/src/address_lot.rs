@@ -126,7 +126,7 @@ impl Into<external::AddressLotBlock> for AddressLotBlock {
     Queryable, Insertable, Selectable, Clone, Debug, Serialize, Deserialize,
 )]
 #[diesel(table_name = address_lot_rsvd_block)]
-pub struct AddressLotRsvdBlock {
+pub struct AddressLotReservedBlock {
     /// A unique identifier for this reservation.
     pub id: Uuid,
 

@@ -11,7 +11,7 @@ use crate::db::error::public_error_from_diesel_pool;
 use crate::db::error::ErrorHandler;
 use crate::db::error::TransactionError;
 use crate::db::model::Name;
-use crate::db::model::{AddressLot, AddressLotBlock, AddressLotRsvdBlock};
+use crate::db::model::{AddressLot, AddressLotBlock, AddressLotReservedBlock};
 use crate::db::pagination::paginated;
 use async_bb8_diesel::{
     AsyncConnection, AsyncRunQueryDsl, Connection, ConnectionError, PoolError,
@@ -122,10 +122,10 @@ impl DataStore {
         // TODO https://github.com/oxidecomputer/omicron/issues/2811
         // Audit external networking database transaction usage
         pool.transaction_async(|conn| async move {
-            let rsvd: Vec<AddressLotRsvdBlock> =
+            let rsvd: Vec<AddressLotReservedBlock> =
                 rsvd_block_dsl::address_lot_rsvd_block
                     .filter(rsvd_block_dsl::address_lot_id.eq(id))
-                    .select(AddressLotRsvdBlock::as_select())
+                    .select(AddressLotReservedBlock::as_select())
                     .limit(1)
                     .load_async(&conn)
                     .await?;
@@ -237,7 +237,7 @@ pub(crate) async fn try_reserve_block(
     lot_id: Uuid,
     inet: IpNetwork,
     conn: &Connection<DTraceConnection<PgConnection>>,
-) -> Result<(AddressLotBlock, AddressLotRsvdBlock), ReserveBlockTxnError> {
+) -> Result<(AddressLotBlock, AddressLotReservedBlock), ReserveBlockTxnError> {
     use db::schema::address_lot_block;
     use db::schema::address_lot_block::dsl as block_dsl;
     use db::schema::address_lot_rsvd_block;
@@ -278,7 +278,7 @@ pub(crate) async fn try_reserve_block(
 
     // 3. Mark the address as in use.
 
-    let rsvd_block = AddressLotRsvdBlock {
+    let rsvd_block = AddressLotReservedBlock {
         id: Uuid::new_v4(),
         address_lot_id: lot_id,
         first_address: inet,
