@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use illumos_utils::fstyp::Fstyp;
+use illumos_utils::zfs::EncryptionDetails;
 use illumos_utils::zfs::Keypath;
 use illumos_utils::zfs::Mountpoint;
 use illumos_utils::zfs::Zfs;
@@ -54,6 +55,8 @@ pub enum DiskError {
     KeyManager(#[from] key_manager::Error),
     #[error("Missing StorageKeyRequester when creating U.2 disk")]
     MissingStorageKeyRequester,
+    #[error("Encrypted filesystem '{0}' missing 'oxide:epoch' property")]
+    MissingEpochProperty(String),
 }
 
 /// A partition (or 'slice') of a disk.
@@ -403,8 +406,19 @@ impl Disk {
             let mountpoint = zpool_name.dataset_mountpoint(dataset);
             let keypath: Keypath = disk_identity.into();
 
-            // TODO: Support epochs/key rotations
-            let epoch = key_requester.load_latest_secret().await?;
+            let epoch =
+                if let Ok(epoch_str) = Zfs::get_oxide_value(dataset, "epoch") {
+                    if let Ok(epoch) = epoch_str.parse::<u64>() {
+                        epoch
+                    } else {
+                        return Err(DiskError::MissingEpochProperty(
+                            dataset.to_string(),
+                        ));
+                    }
+                } else {
+                    key_requester.load_latest_secret().await?
+                };
+
             let key = key_requester
                 .get_key(epoch, disk_identity.clone().into())
                 .await?;
@@ -417,12 +431,14 @@ impl Disk {
                         error,
                     })?;
 
+            let encryption_details = EncryptionDetails { keypath, epoch };
+
             let result = Zfs::ensure_filesystem(
                 &format!("{}/{}", zpool_name, dataset),
                 Mountpoint::Path(mountpoint),
                 zoned,
                 do_format,
-                Some(keypath),
+                Some(encryption_details),
             );
 
             keyfile.zero_and_unlink().await.map_err(|error| {
@@ -434,13 +450,13 @@ impl Disk {
 
         for dataset in datasets.into_iter() {
             let mountpoint = zpool_name.dataset_mountpoint(dataset);
-            let keypath = None;
+            let encryption_details = None;
             Zfs::ensure_filesystem(
                 &format!("{}/{}", zpool_name, dataset),
                 Mountpoint::Path(mountpoint),
                 zoned,
                 do_format,
-                keypath,
+                encryption_details,
             )?;
         }
         Ok(())

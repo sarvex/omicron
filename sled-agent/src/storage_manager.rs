@@ -277,13 +277,13 @@ impl StorageWorker {
         let zoned = true;
         let fs_name = &dataset_name.full();
         let do_format = true;
-        let keypath = None;
+        let encryption_details = None;
         Zfs::ensure_filesystem(
             &dataset_name.full(),
             Mountpoint::Path(PathBuf::from("/data")),
             zoned,
             do_format,
-            keypath,
+            encryption_details,
         )?;
         // Ensure the dataset has a usable UUID.
         if let Ok(id_str) = Zfs::get_oxide_value(&fs_name, "uuid") {
