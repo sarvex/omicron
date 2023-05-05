@@ -232,7 +232,7 @@ impl Zfs {
         mountpoint: &Mountpoint,
     ) -> Result<bool, EnsureFilesystemError> {
         let mut command = std::process::Command::new(ZFS);
-        let cmd = command.args(&["list", "-Hpo", "name,type,mountpoin", name]);
+        let cmd = command.args(&["list", "-Hpo", "name,type,mountpoint", name]);
         // If the list command returns any valid output, validate it.
         if let Ok(output) = execute(cmd) {
             let stdout = String::from_utf8_lossy(&output.stdout);
