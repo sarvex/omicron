@@ -2498,8 +2498,6 @@ mod test {
 
     #[async_trait]
     impl SecretRetriever for TestSecretRetriever {
-        /// TODO: Figure out where we want our local key material to come from
-        /// See RFD 388
         async fn get_latest(
             &self,
         ) -> Result<VersionedIkm, SecretRetrieverError> {
@@ -2510,7 +2508,6 @@ mod test {
             Ok(VersionedIkm::new(epoch, salt, &secret))
         }
 
-        /// We don't plan to do any key rotation before trust quorum is ready
         async fn get(
             &self,
             epoch: u64,

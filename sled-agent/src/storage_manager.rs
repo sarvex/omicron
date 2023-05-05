@@ -252,6 +252,10 @@ struct StorageWorker {
     nexus_notifications: FuturesOrdered<NotifyFut>,
     rx: mpsc::Receiver<StorageWorkerRequest>,
     underlay: Arc<Mutex<Option<UnderlayAccess>>>,
+
+    // A mechanism for requesting disk encryption keys from the
+    // [`key_manager::KeyManager`]
+    key_requester: StorageKeyRequester,
 }
 
 #[derive(Clone, Debug)]
@@ -374,7 +378,13 @@ impl StorageWorker {
 
         // Ensure all disks conform to the expected partition layout.
         for disk in unparsed_disks.into_iter() {
-            match sled_hardware::Disk::new(&self.log, disk).map_err(|err| {
+            match sled_hardware::Disk::new(
+                &self.log,
+                disk,
+                Some(&self.key_requester),
+            )
+            .await
+            .map_err(|err| {
                 warn!(self.log, "Could not ensure partitions: {err}");
                 err
             }) {
@@ -467,11 +477,16 @@ impl StorageWorker {
         info!(self.log, "Upserting disk: {disk:?}");
 
         // Ensure the disk conforms to an expected partition layout.
-        let disk =
-            sled_hardware::Disk::new(&self.log, disk).map_err(|err| {
-                warn!(self.log, "Could not ensure partitions: {err}");
-                err
-            })?;
+        let disk = sled_hardware::Disk::new(
+            &self.log,
+            disk,
+            Some(&self.key_requester),
+        )
+        .await
+        .map_err(|err| {
+            warn!(self.log, "Could not ensure partitions: {err}");
+            err
+        })?;
 
         let mut disks = resources.disks.lock().await;
         let disk = DiskWrapper::Real {
@@ -498,7 +513,9 @@ impl StorageWorker {
             &self.log,
             &zpool_name,
             &synthetic_id,
-        )?;
+            Some(&self.key_requester),
+        )
+        .await?;
         let disk = DiskWrapper::Synthetic { zpool_name };
         self.upsert_disk_locked(resources, &mut disks, disk).await
     }
@@ -752,10 +769,6 @@ struct StorageManagerInner {
 
     tx: mpsc::Sender<StorageWorkerRequest>,
 
-    // A mechanism for requesting disk encryption keys from the
-    // [`key_manager::KeyManager`]
-    key_requester: StorageKeyRequester,
-
     // A handle to a worker which updates "pools".
     task: JoinHandle<Result<(), Error>>,
 }
@@ -781,13 +794,13 @@ impl StorageManager {
                 log: log.clone(),
                 resources: resources.clone(),
                 tx,
-                key_requester,
                 task: tokio::task::spawn(async move {
                     let mut worker = StorageWorker {
                         log,
                         nexus_notifications: FuturesOrdered::new(),
                         rx,
                         underlay: Arc::new(Mutex::new(None)),
+                        key_requester,
                     };
 
                     worker.do_work(resources).await

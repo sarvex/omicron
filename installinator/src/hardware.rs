@@ -22,7 +22,7 @@ pub struct Hardware {
 }
 
 impl Hardware {
-    pub fn scan(log: &Logger) -> Result<Self> {
+    pub async fn scan(log: &Logger) -> Result<Self> {
         let is_gimlet = sled_hardware::is_gimlet()
             .context("failed to detect whether host is a gimlet")?;
         ensure!(is_gimlet, "hardware scan only supported on gimlets");
@@ -50,27 +50,24 @@ impl Hardware {
             "num_disks" => disks.len(),
         );
 
-        let m2_disks = disks
-            .into_iter()
-            .filter_map(|disk| {
-                // Skip U.2 disks
-                match disk.variant() {
-                    DiskVariant::U2 => {
-                        info!(
-                            log, "ignoring U.2 disk";
-                            "path" => disk.devfs_path().display(),
-                        );
-                        return None;
-                    }
-                    DiskVariant::M2 => (),
+        let mut m2_disks = vec![];
+        for disk in disks.into_iter() {
+            // Skip U.2 disks
+            match disk.variant() {
+                DiskVariant::U2 => {
+                    info!(
+                        log, "ignoring U.2 disk";
+                        "path" => disk.devfs_path().display(),
+                    );
                 }
-
-                Some(
-                    Disk::new(log, disk)
-                        .context("failed to instantiate Disk handle for M.2"),
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
+                DiskVariant::M2 => {
+                    let disk = Disk::new(log, disk, None)
+                        .await
+                        .context("failed to instantiate Disk handle for M.2")?;
+                    m2_disks.push(disk);
+                }
+            }
+        }
 
         Ok(Self { m2_disks })
     }
