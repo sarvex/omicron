@@ -21,4 +21,7 @@ done
 pfexec routeadm -e ipv6-forwarding -u
 pfexec routeadm -e ipv6-routing -u
 
+# Add tools like swadm & ddmadm to the PATH by default
+echo 'export PATH=$PATH:/opt/oxide/dendrite/bin:/opt/oxide/mg-ddm/bin' >> ~root/.profile
+
 exit $SMF_EXIT_OK
