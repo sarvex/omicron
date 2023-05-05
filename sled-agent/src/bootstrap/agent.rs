@@ -290,6 +290,23 @@ impl Agent {
                 err,
             })?;
 
+        // We expect this directory to exist for Key Management
+        // It's purposefully in the ramdisk and files only exist long enough
+        // to create and mount encrypted datasets.
+        info!(
+            log, "Ensuring zfs key directory exists";
+            "path" => sled_hardware::disk::KEYPATH_ROOT,
+        );
+        tokio::fs::create_dir_all(sled_hardware::disk::KEYPATH_ROOT)
+            .await
+            .map_err(|err| BootstrapError::Io {
+                message: format!(
+                    "Creating zfs key directory {}",
+                    sled_hardware::disk::KEYPATH_ROOT
+                ),
+                err,
+            })?;
+
         let bootstrap_etherstub = bootstrap_etherstub()?;
 
         let bootstrap_etherstub_vnic = Dladm::ensure_etherstub_vnic(
